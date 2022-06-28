@@ -1,0 +1,11 @@
+__pycache__/
+dist/
+build/
+*.egg-info/
+*.ipynb*
+.krb*
+*.out
+*.cpp
+core.*
+*.log
+*.pid

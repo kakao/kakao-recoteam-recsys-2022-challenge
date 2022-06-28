@@ -1,0 +1,42 @@
+{
+    "info": {
+        "svc": "recsys2022",
+        "model_name": "pretrain-submit-b4r-plain-mlm-len20"
+    },
+    "data": {
+        "download": {
+            "svc": "recsys2022",
+            "data": "b4r_data"
+        },
+        "preprocess": {
+            "fname": "submit_tr_csv_main",
+            "fname_vali": "val_csv_main",
+            "frequency_min_count": 1,
+            "consume_min_count": 1,
+            "max_samples_per_stream": 1
+        }
+    },
+    "trainer": {
+        "use_amp": true,
+        "use_bert_adam": false,
+        "lr": 0.0016,
+        "step_size": 10,
+        "gamma": 1.0,
+        "num_epochs": 60,
+        "batch_size": 1024,
+        "num_workers": 8,
+        "ndcg_k": 100,
+        "log_dir": "",
+        "is_submit": true
+    },
+    "model": {
+        "num_blocks": 1,
+        "dim": 128,
+        "num_heads": 4,
+        "drop_rate": 0.05,
+        "sequential": true,
+        "sequence_length": 20,
+        "mask_prob": 0.20,
+        "is_mlm": true
+    }
+}
