@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 def build_dataset(sessions, purchases=None):
     print('build dataset. dataset info: ', sessions.shape)
-    item_feats = pd.read_csv('../data/item_features.csv', dtype=str)
+    item_feats = pd.read_csv('../parsed_data/item_features.csv', dtype=str)
     item_feats['feat_id'] = item_feats['feature_category_id'] + ':' + item_feats['feature_value_id']
     d = item_feats.groupby("item_id")['feat_id'].apply(list).reset_index()
     item_to_feats = {x:y for (x, y) in zip(d.item_id, d.feat_id)}
@@ -75,18 +75,30 @@ def convert_dataset(fname):
     df = df[["session_id", "item_ids", "date_session_begin", "date_session_end", "target_item", "date_purchase", "target_feat", "feats", "ym", "year", "month", "dow"]]
     return df
 
-tr_csv = convert_dataset("../processed/df_train_all")
-val_csv = convert_dataset("../processed/df_val")
-te_csv = convert_dataset("../processed/df_te")
+#tr_csv = convert_dataset("../processed/df_train_all")
+#val_csv = convert_dataset("../processed/df_val")
+#te_csv = convert_dataset("../processed/df_te")
 
-submit_tr_sessions = pd.read_csv('../data/train_sessions.csv', dtype=str)
-submit_tr_purchases = pd.read_csv('../data/train_purchases.csv', dtype=str)
+tr_sessions = pd.read_csv('../parsed_data/train_sessions.csv', dtype=str)
+tr_purchases = pd.read_csv('../parsed_data/train_purchases.csv', dtype=str)
+tr_csv = build_dataset(tr_sessions, tr_purchases)
+
+val_sessions = pd.read_csv('../parsed_data/val_sessions.csv', dtype=str)
+val_purchases = pd.read_csv('../parsed_data/val_purchases.csv', dtype=str)
+val_csv = build_dataset(val_sessions, val_purchases)
+
+te_sessions = pd.read_csv('../parsed_data/te_sessions.csv', dtype=str)
+te_purchases = pd.read_csv('../parsed_data/te_purchases.csv', dtype=str)
+te_csv = build_dataset(te_sessions, te_purchases)
+
+submit_tr_sessions = pd.read_csv('../parsed_data/train_sessions.csv', dtype=str)
+submit_tr_purchases = pd.read_csv('../parsed_data/train_purchases.csv', dtype=str)
 submit_tr_csv = build_dataset(submit_tr_sessions, submit_tr_purchases)
 
-leaderboard_tr_sessions = pd.read_csv('../data/test_leaderboard_sessions.csv', dtype=str)
+leaderboard_tr_sessions = pd.read_csv('../parsed_data/te_sessions.csv', dtype=str)
 submit_leaderboard_csv = build_dataset(leaderboard_tr_sessions)
 
-final_tr_sessions = pd.read_csv('../data/test_final_sessions.csv', dtype=str)
+final_tr_sessions = pd.read_csv('../parsed_data/te_sessions.csv', dtype=str)
 submit_final_csv = build_dataset(final_tr_sessions)
 
 os.makedirs('./data', exist_ok=True)
@@ -101,12 +113,12 @@ joblib.dump(submit_leaderboard_csv, './data/submit_leaderboard_csv')
 joblib.dump(submit_final_csv, './data/submit_final_csv')
 
 
-item_feats = pd.read_csv('../data/item_features.csv', dtype=str)
+item_feats = pd.read_csv('../parsed_data/item_features.csv', dtype=str)
 items = sorted(item_feats.item_id.unique().tolist(), key=lambda x: int(x))
 iid2idx = dict(zip(items, range(len(items))))
 joblib.dump([iid2idx], 'submit-indices')
 
-item_feats = pd.read_csv('../processed/item_features.csv', dtype=str)
+item_feats = pd.read_csv('../parsed_data/item_features.csv', dtype=str)
 items = sorted(item_feats.item_id.unique().tolist(), key=lambda x: int(x))
 iid2idx = dict(zip(items, range(len(items))))
 joblib.dump([iid2idx], 'val-indices')

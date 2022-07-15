@@ -53,13 +53,18 @@ class PCos():
         for k in idmap.keys():
             new_iid2vec2[k] = [score if genre in item2feat[k] else 0 for genre, score in common_genres.items()]
         new_iid2vec = {k: iid2vec[k] for k in idmap.keys()}
-
-        print("calculating disim...")
-        mat = csr_matrix(np.vstack(list(new_iid2vec.values())))
-        mat2 = csr_matrix(np.vstack(list(new_iid2vec2.values())))
-        G = (mat2 * mat2.T).toarray()
-        N = (mat * mat.T).toarray()
-        T = G * (1 / (1e-6 + N) * (1 / (1 + np.exp(-N))))
+        
+        print("calculating cos_sim...")
+        if logit:
+            svec = [new_iid2vec2[v] for v in idmap.keys()]
+        else:
+            svec = [new_iid2vec[v] for v in idmap.keys()]
+        svec = np.array(svec)
+        svec = torch.FloatTensor(svec)
+        svec = svec.cuda()
+        cos_sim = svec @ svec.T
+        cos_sim = cos_sim.detach().cpu().numpy()
+        
         if 'submit' in self.dir_name:
             ymmap = {
                 "03": 0.3,
@@ -90,18 +95,8 @@ class PCos():
         Iij = Iij.toarray()
         Ii = view_matrix.toarray().sum(0)
         confidence_array = (1+Iij) / (1 + np.expand_dims(Ii, 1))
-        DiSim = T * confidence_array
-        np.fill_diagonal(DiSim, 0)
-        
-        print("calculating cos_sim...")
-        svec = [iid2vec[v] for v in idmap.keys()]
-        svec = np.array(svec)
-        svec = torch.FloatTensor(svec)
-        svec = svec.cuda()
-        cos_sim = svec @ svec.T
-        cos_sim = cos_sim.detach().cpu().numpy()
-        
-        pcos = DiSim * cos_sim
+        cos_sim = cos_sim * confidence_array
+        np.fill_diagonal(cos_sim, 0)
 
         if logit:
             print("loading additional resources...")
@@ -123,8 +118,6 @@ class PCos():
             sessions = []
             for batch in dl_te:
                 _logit = self._cos_similarity_logit(cos_sim, popularity, batch)
-                _logit = _logit + self._disim_similarity_logit(DiSim, batch)
-                # _logit += torch_popularity * 0.0001
                 torch.log(1e-10 + _logit)
                 _logit[batch.extra.histories] = -10000.0
                 logit.append(_logit.detach().cpu())
@@ -136,8 +129,8 @@ class PCos():
             print(f"pcos logit (#session x #item) dumped at {self.save_fname}")
 
         else:
-            joblib.dump(pcos, self.save_fname)
-            print(f"disim (#item x #item) dumped at {self.save_fname}")
+            joblib.dump(cos_sim, self.save_fname)
+            print(f"pcos (#item x #item) dumped at {self.save_fname}")
 
 
 def run(logit=False, submit=False, save_fname='save/DiSim', kind='val', **kwargs):

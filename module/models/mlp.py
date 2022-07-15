@@ -185,10 +185,12 @@ def run(
     idmap, fidmap = joblib.load(f'{dir_name}/indices')[:2]
     aug = '_aug' if kwargs.get('augmentation', False) else ''
     df_train = joblib.load(f'{dir_name}/df_train{aug}')
+    print(df_train.shape)
     df_te = joblib.load(f'{dir_name}/df_val')
     mlp_params = joblib.load(f'{dir_name}/mlp_train{aug}')
     model = MLP(idmap, fidmap, mlp_params=mlp_params, dim=256, layer_dim=3000, dropout=0.35).to(device)
     model.set_fork_logic(df_train, df_te, joblib.load(f'{dir_name}/features'))
+    print("train len:", len(df_train))
     ds = SessionDataset(df_train, idmap, fidmap, num_negatives=100, mlp_params=mlp_params)
     dl_tr = SessionDataLoader(
         ds, batch_size=batch_size, num_negatives=num_negatives, idmap=idmap, fidmap=fidmap, mlp_params=mlp_params,

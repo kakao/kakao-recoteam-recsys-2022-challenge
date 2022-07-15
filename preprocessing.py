@@ -32,28 +32,11 @@ def train_test_split(submit=False):
     if submit:
         dir_name += '_submit'
     os.makedirs(dir_name, exist_ok=True)
-    if submit:
-
-        val_session_ids = shuffle(last_month_session_ids)[:1000]
-        tr_sessions = all_sessions[all_sessions.session_id.isin(val_session_ids) == False]
-        tr_purchases = all_purchases[all_purchases.session_id.isin(val_session_ids) == False]
-        val_sessions = all_sessions[all_sessions.session_id.isin(val_session_ids)]
-        val_purchases = all_purchases[all_purchases.session_id.isin(val_session_ids)]
-    else:
-        tr_sessions = all_sessions[all_sessions.session_id.isin(last_month_session_ids) == False]
-        tr_purchases = all_purchases[all_purchases.session_id.isin(last_month_session_ids) == False]
-        val_te_session_ids = shuffle(last_month_session_ids)
-        val_session_ids = val_te_session_ids[:10000]
-        te_session_ids = val_te_session_ids[10000:]
-        val_sessions = all_sessions[all_sessions.session_id.isin(val_session_ids)]
-        val_purchases = all_purchases[all_purchases.session_id.isin(val_session_ids)]
-        te_sessions = all_sessions[all_sessions.session_id.isin(te_session_ids)]
-        te_purchases = all_purchases[all_purchases.session_id.isin(te_session_ids)]
-        candidate_items = list(set(val_purchases.item_id.tolist()) | set(te_purchases.item_id.tolist()))
-        candidate_items = pd.DataFrame({"item_id": candidate_items})
-        tocsv(candidate_items, dir_name, 'candidate_items.csv')
-        train_features = all_features[all_features.item_id.isin(all_item_ids)]
-        tocsv(train_features, dir_name, 'item_features.csv')
+    val_session_ids = shuffle(last_month_session_ids)[:1000]
+    tr_sessions = all_sessions[all_sessions.session_id.isin(val_session_ids) == False]
+    tr_purchases = all_purchases[all_purchases.session_id.isin(val_session_ids) == False]
+    val_sessions = all_sessions[all_sessions.session_id.isin(val_session_ids)]
+    val_purchases = all_purchases[all_purchases.session_id.isin(val_session_ids)]
     tocsv(tr_sessions, dir_name, 'train_sessions.csv')
     tocsv(tr_purchases, dir_name, 'train_purchases.csv')
     tocsv(val_sessions, dir_name, 'val_sessions.csv')
@@ -61,6 +44,7 @@ def train_test_split(submit=False):
     if not submit:
         tocsv(te_sessions, dir_name, 'te_sessions.csv')
         tocsv(te_purchases, dir_name, 'te_purchases.csv')
+    return dir_name
 
 
 def build_feature_and_indices(feat_fname, root='processed'):
@@ -95,6 +79,7 @@ def build_dataset(fname_session, fname_purchase=None, keep_last=3, keep_last_dat
     df_sort = df_sess.sort_values(['session_id', 'date'], ascending=[True, True])
     df_sess = df_sort.groupby(['session_id', 'item_id']).tail(keep_last)
     # Filtering views (lastest months)
+    print("keep_last_date", keep_last_date)
     df_sess = df_sess[df_sess.date.apply(lambda x: x[:len(keep_last_date)]) >= keep_last_date]
     df_sess['kp'] = [(x,y) for (x,y) in zip(df_sess.date, df_sess.item_id)]
     left = df_sess.groupby('session_id').kp.apply(lambda x: [y for y in sorted(x)]).reset_index()
@@ -164,23 +149,30 @@ def build_edges_v2(df_train, idmap, weights=False, dir_name='processed'):
 
 def data_augmentation(df_train_fname, dir_name):
     print('Data augmentation is used')
-    def func(x):
-        x.views = [y for y in x.views if y != x.purchase]
-        x.view_dates = x.view_dates[:-1]
-        x.date_session_end = x.view_dates[-1]
-        if not bool(x.views):
-            return None
-        try:
-            x.history.remove(x.purchase)
-        except:
-            pass
-        return x
     df = joblib.load(df_train_fname)
-    df['purchase'] = df.views.apply(lambda x: x[-1])
-    df['views'] = df.views.apply(lambda x: x[0: -1])
-    df = df[df.views.apply(len) > 0]
-    df = df.apply(func, axis=1)
-    df = df[~df.views.isna()]
+    def aug(val):
+        val = pd.DataFrame(val)
+        val = val[val.views.apply(len) > 0]
+        val['purchase'] = val.views.apply(lambda x: x[-1])
+        new_views, new_histories, new_view_dates = [], [], []
+        zzz = zip(val.views.tolist(), val.view_dates.tolist(), val.history.tolist(), val.purchase.tolist())
+        for _views, _view_dates, _histories, purchase in zzz:
+            nv_row = []
+            nvd_row =[]
+            for view, view_date in zip(_views, _view_dates):
+                if view != purchase:
+                    nv_row.append(view)
+                    nvd_row.append(view_date)
+            nh_row = [x for x in _histories if x != purchase]
+            new_views.append(nv_row)
+            new_view_dates.append(nvd_row)
+            new_histories.append(nh_row)
+        val['views'] = new_views
+        val['view_dates'] = new_view_dates
+        val['history'] = new_histories
+        val = val[val.views.apply(len) > 0]
+        return val
+    df = aug(df)
     df_aug = pd.concat([joblib.load(df_train_fname), df], axis=0)
     df_aug = df_aug.sort_values(by='date_session_end').reset_index(drop=True)
     joblib.dump(df_aug, f'{dir_name}/df_train_aug')
@@ -269,25 +261,36 @@ def run(submit=False, seed=2022):
     fix_seed(seed)
     if submit:
         root = 'data'
-        keep_last_date = '2021-03'
     else:
-        root = 'processed'
-        keep_last_date = '2021-02'
+        root = 'parsed_data'
     print('Split train/test')
-    train_test_split(submit=submit)
-    dir_name = 'processed'
-    if submit:
-        dir_name += '_submit'
+    if submit ==True:
+        dir_name = train_test_split(submit=submit)
+    else:
+        import subprocess
+        import os
+        os.makedirs("./processed", exist_ok=True)
+        os.system("cp ./parsed_data/* ./processed")
+        dir_name = 'processed'
+    yms = sorted(pd.read_csv(f'{dir_name}/train_purchases.csv').date.apply(lambda x: x[:7]).unique().tolist())
+    keep_last_date = yms[-3]  # train 3 months
+    yms = sorted(pd.read_csv(f'{dir_name}/val_purchases.csv').date.apply(lambda x: x[:7]).unique().tolist())
+    keep_last_date_val_te = yms[-1]  # val 1 months
+
     build_feature_and_indices(f'{root}/item_features.csv', root=dir_name)
     print("Build features and indices")
+    print("all")
     df_train_all = build_dataset(f'{dir_name}/train_sessions.csv', f'{dir_name}/train_purchases.csv', keep_last_date='2018')
+    print("tr")
     df_train = build_dataset(f'{dir_name}/train_sessions.csv', f'{dir_name}/train_purchases.csv', keep_last_date=keep_last_date)
-    df_val = build_dataset(f'{dir_name}/val_sessions.csv', f'{dir_name}/val_purchases.csv')
+    print("val")
+    df_val = build_dataset(f'{dir_name}/val_sessions.csv', f'{dir_name}/val_purchases.csv', keep_last_date=keep_last_date_val_te)
     joblib.dump(df_train_all, f'{dir_name}/df_train_all')
     joblib.dump(df_train, f'{dir_name}/df_train')
     joblib.dump(df_val, f'{dir_name}/df_val')
     if not submit:
-        df_te = build_dataset(f'{dir_name}/te_sessions.csv', f'{dir_name}/te_purchases.csv')
+        print('te')
+        df_te = build_dataset(f'{dir_name}/te_sessions.csv', f'{dir_name}/te_purchases.csv', keep_last_date=keep_last_date_val_te)
         joblib.dump(df_te, f'{dir_name}/df_te')
     else:
         df_leader = build_dataset(f'{root}/test_leaderboard_sessions.csv')

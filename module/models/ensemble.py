@@ -23,21 +23,21 @@ from module.models.pcos import PCos
 
 
 class EnsembleLogit:
-    def __init__(self, logit_fnames, folder, device='cpu', similarity_weight=5.0):
+    def __init__(self, logit_fnames, folder, device='cpu'):
         self.models = {}
         self.device = device
         self.idmap, self.fidmap, self.idmap_inv, self.feat_idmap_inv = joblib.load(f'{folder}/indices')
         self.mapper = np.vectorize(lambda x: self.idmap[x])
-        if len(logit_fnames[0]) == 3:
-            for key, logit_fname, weight in logit_fnames:
+        for x in logit_fnames:
+            if len(x) == 3:
+                key, logit_fname, weight = x
                 self.set_logic(key, logit_fname, weight=weight)
-        else:
-            for key, logit_fname in logit_fnames:
+            else:
+                key, logit_fname = x
                 self.set_logic(key, logit_fname)
         self.folder = folder
         print(f'Load {logit_fnames}')
         self.set_popularity(folder)
-        self.similarity_weight = similarity_weight
         self.logit_min = 100.0
         self.logit_max = -100.0
         self.pcos_sim = None
@@ -61,11 +61,13 @@ class EnsembleLogit:
         for i, cnt in res.items():
             popularity[i] = np.log(1 + cnt)
         self.popularity = torch.FloatTensor(popularity)
-        
+
     def similarity_logit(self, batch, mask=True, pool=None):
-        score = torch.FloatTensor(self.pcos_sim[[views[-1].item() for views in batch.views]]).to(self.device)
-        score = score + 0.0001 * self.popularity.to(self.device)
+        score = 0.9 * torch.FloatTensor(self.pcos_sim[[views[-1].item() for views in batch.views]]).to(self.device)
+        score += 0.09 * torch.FloatTensor(self.pcos_sim[[views[-min(len(views),2)].item() for views in batch.views]]).to(self.device)
+        score += 0.01 * torch.FloatTensor(self.pcos_sim[[views[-min(len(views),3)].item() for views in batch.views]]).to(self.device)
         score = torch.log(1e-6 + score)
+        score = score + 0.0001 * self.popularity.to(self.device)
         if mask:
             score[batch.extra.histories] = -10000.0
         if pool is not None:
@@ -93,11 +95,9 @@ class EnsembleLogit:
     def set_weights(self, weight_dict):
         for k in self.models.keys():
             self.models[k].weight = weight_dict.get(f'{k}', self.models[k].weight)
-        self.similarity_weight = weight_dict.get('pcos', self.similarity_weight)
         weights = []
         for k in self.models.keys():
             weights.append((k, self.models[k].weight))
-        weights.append(('pcos', self.similarity_weight))
         print(f'Set {weights}')  
     
     def forward(self, batch, mask=True,  pool=None, fork_fallback=False, fallback_ratio=0.8):
@@ -159,12 +159,12 @@ class EnsembleLogit:
         dl_te = SessionDataLoader(ds_te, idmap, fidmap, batch_size=batch_size, mlp_params=mlp_params)
         return dl_te
     
-    def submit_to_csv(model, dl, topk=100, save_fname='submit.result', **kwargs):
+    def submit_to_csv(model, dl, topk=100, save_fname='submit.result', folder='data', **kwargs):
         import numpy as np
         import pandas as pd
         print(f'kwargs {kwargs}')
         mapper = np.vectorize(lambda x: model.idmap[x])
-        candidates = pd.read_csv('data/candidate_items.csv', dtype='str').item_id.unique()
+        candidates = pd.read_csv(f'{folder}/candidate_items.csv', dtype='str').item_id.unique()
         candidates = mapper(np.array(sorted(candidates, key=lambda x: int(x))))
         MSG = 'session_id,item_id,rank\n'
         for batch in tqdm(dl, ncols=70):
@@ -181,7 +181,7 @@ class EnsembleLogit:
         df = pd.read_csv(f'save/{save_fname}', dtype='str')
         assert not bool(df.isna().sum().sum())
         pool = set(df.item_id.unique())
-        cand = set(pd.read_csv('data/candidate_items.csv', dtype='str').item_id.unique())
+        cand = set(pd.read_csv(f'{folder}/candidate_items.csv', dtype='str').item_id.unique())
         assert len(pool - cand) == 0
         print(f'logit (min: {model.logit_min}, max: {model.logit_max})')
 

@@ -1,7 +1,7 @@
 fire
 joblib
 easydict
-pandas
+pandas>=1.4.2
 pytorch_lightning
 scikit-learn
 Cython
