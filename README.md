@@ -1,6 +1,6 @@
-# Recsys Challenge 2022
+# Solution of Kakao Recoteam to Recsys Challenge 2022
 
-https://www.recsyschallenge.com/2022/
+Refer to https://www.recsyschallenge.com/2022/
 
 ### Experimental Environments:
 - We tested on Ubuntu 18.04
